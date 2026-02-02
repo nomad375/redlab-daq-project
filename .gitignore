@@ -1,0 +1,14 @@
+# Data
+influxdb_data/
+grafana_data/
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
