@@ -55,7 +55,7 @@ def main():
             for ch in range(8):
                 try:
                     temp = ai_device.t_in(ch, TempScale.CELSIUS)
-                    if -270 < temp < 2000:
+                    if -70 < temp < 600:   # Limiting temperature range for K-type TC
                         points.append(
                             Point("temperature")
                             .tag("channel", f"ch{ch}")
