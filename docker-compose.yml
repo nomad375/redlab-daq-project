@@ -13,6 +13,18 @@ services:
       influxdb:
         condition: service_healthy 
 
+  mscl-collector:
+    image: nomad375/mscl-daq:latest
+    container_name: mscl_app
+    privileged: true
+    restart: always
+    volumes:
+      - /dev:/dev
+    env_file: .env
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
   influxdb:
     image: influxdb:2.7
     container_name: influxdb
