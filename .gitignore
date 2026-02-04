@@ -1,14 +1,27 @@
-# Data
-influxdb_data/
-grafana_data/
-
-# Secrets
-.env
-
-# Python
+# Python bytecode
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
 .venv/
 
-# OS
+# Environment variables (Sensitive data)
+.env
+
+# Local development overrides
+docker-compose.override.yml
+
+# Docker build artifacts
+.dockerignore
+
+# OS specific files
 .DS_Store
+Thumbs.db
+
+# Application logs
+*.log
+
+build-multiarch.sh

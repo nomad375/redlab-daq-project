@@ -1,51 +1,62 @@
 #!/bin/bash
-
-# Exit on any error
+# Exit immediately if a command exits with a non-zero status
 set -e
 
-echo "--- Starting Raspberry Pi Deployment for RedLab DAQ ---"
+echo "==========================================="
+echo "   Raspberry Pi DAQ Stack Setup Utility    "
+echo "==========================================="
 
-# 1. Update System
+# 1. Update the system
 echo ">>> Updating system packages..."
 sudo apt-get update && sudo apt-get upgrade -y
 
-# 2. Install Docker
-if ! [ -x "$(command -v docker)" ]; then
+# 2. Install Docker using the official convenience script
+if ! command -v docker &> /dev/null; then
     echo ">>> Installing Docker..."
     curl -sSL https://get.docker.com | sh
-    # Add current user to docker group
     sudo usermod -aG docker $USER
-    echo "!!! Docker installed. Note: Group changes will apply after logout/login."
+    echo ">>> Docker installed. User added to 'docker' group."
 else
     echo ">>> Docker is already installed."
 fi
 
-# 3. Install Docker Compose dependencies
-echo ">>> Installing Docker Compose and Git..."
-sudo apt-get install -y git python3-pip libffi-dev python3-dev make build-essential
-sudo usermod -aG docker $USER
-newgrp docker
+# 3. Install git (required to clone the project)
+if ! command -v git &> /dev/null; then
+    echo ">>> Installing git..."
+    sudo apt-get install -y git
+fi
 
-# 4. Set up UDEV rules for RedLab-TC
-echo ">>> Configuring UDEV rules for USB-TC (Vendor ID: 09db)..."
-echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="09db", MODE="0666"' | sudo tee /etc/udev/rules.d/99-redlab.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-echo ">>> UDEV rules applied."
+# 4. Clone the repository (Placeholder - replace with your actual repo URL)
+# If the folder already exists, we skip this step
+PROJECT_DIR="redlab-daq-project"
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo ">>> Please enter your Git Repository URL:"
+    read REPO_URL
+    git clone "$REPO_URL" "$PROJECT_DIR"
+fi
 
-# 5. Prepare Project Directory (Optional, if running from project root)
-if [ ! -f .env.example ]; then
-    echo "--- Notice: .env.example not found in current folder. ---"
-else
-    if [ ! -f .env ]; then
-        echo ">>> Creating .env file from template..."
+cd "$PROJECT_DIR"
+
+# 5. Handle environment variables (.env)
+if [ ! -f ".env" ]; then
+    echo ">>> .env file not found. Creating from example..."
+    if [ -f ".env.example" ]; then
         cp .env.example .env
-        echo "!!! IMPORTANT: Edit .env file with your secrets before running docker compose."
+        echo "!!! IMPORTANT: Please edit the .env file with your InfluxDB tokens now."
+        echo ">>> Command: nano .env"
+    else
+        echo "!!! WARNING: .env.example not found. You will need to create .env manually."
     fi
 fi
 
-echo "--- Setup Complete! ---"
-echo "Recommended next steps:"
-echo "1. Log out and log back in (to apply Docker group permissions)."
-echo "2. Edit your .env file."
-echo "3. Run: docker compose up -d --build"
+# 6. Ensure scripts are executable
+chmod +x *.sh
+
+# 7. Final deployment
+echo ">>> Initializing the stack..."
+# We use our previously created setup.sh to pull images and start
+./setup.sh
+
+echo "==========================================="
+echo "   Setup finished! Check logs: ./logs.sh   "
+echo "==========================================="

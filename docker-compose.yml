@@ -45,13 +45,10 @@ services:
       - GF_SERVER_ROOT_URL=${GRAFANA_ACCESS_ADDRESS}
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/provisioning/dashboards/main_dash.json:/var/lib/grafana/dashboards/main_dash.json
+      - ./grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - influxdb
     restart: always
-    
 
 volumes:
   influxdb_data:

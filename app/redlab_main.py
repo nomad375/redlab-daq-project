@@ -26,7 +26,7 @@ def get_device():
             return dev
         else:
             print("--- Device not found in USB. Exiting for container restart...")
-            sys.exit(1) # Exit to let Docker restart the container and refresh USB stack
+            sys.exit(1) # Let Docker restart the container to refresh USB stack
     except Exception as e:
         print(f"!!! Connection error: {e}")
         sys.exit(1)
@@ -57,6 +57,7 @@ def main():
             for ch in range(8):
                 try:
                     temp = ai_device.t_in(ch, TempScale.CELSIUS)
+                    # Filter out noise and incorrect readings
                     if TEMP_MIN < temp < TEMP_MAX:
                         points.append(
                             Point("temperature")
@@ -65,24 +66,29 @@ def main():
                         )
                         log_data.append(f"CH{ch}:{temp:.1f}")
                 except ULException as e:
-                    if "OPEN_CONNECTION" in str(e):
+                    # Error code 85 means 'Open Connection' (no thermocouple attached)
+                    # We skip these channels silently to avoid log spamming
+                    if e.error_code == 85:
                         continue
-                    # Any other hardware error (like disconnect) triggers restart
-                    print(f"\n!!! Hardware error during reading: {e}")
+                    
+                    # Any other hardware error (e.g. device disconnected) triggers restart
+                    print(f"\n!!! Hardware error on CH{ch}: {e}")
                     sys.exit(1) 
 
+            # Write collected points to InfluxDB
             if points:
                 try:
                     write_api.write(BUCKET, ORG, points)
                     if log_data:
-                        print(f"Data logged: " + " | ".join(log_data))
+                        # Console feedback for active channels
+                        print(f"Logged: " + " | ".join(log_data))
                 except Exception as e:
                     print(f"!!! InfluxDB Write Error: {e}")
             
             time.sleep(1)
 
     except Exception as e:
-        print(f"\n!!! Critical error: {e}")
+        print(f"\n!!! Critical runtime error: {e}")
         sys.exit(1)
     finally:
         if daq_device:
