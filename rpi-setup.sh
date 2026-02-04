@@ -1,43 +1,47 @@
 #!/bin/bash
-# Exit immediately if a command exits with a non-zero status
+# Выход при любой ошибке
 set -e
 
 echo "==========================================="
 echo "   Raspberry Pi DAQ Stack Setup Utility    "
 echo "==========================================="
 
-# 1. Update the system
+# 1. Обновление системы
 echo ">>> Updating system packages..."
 sudo apt-get update && sudo apt-get upgrade -y
 
-# 2. Install Docker using the official convenience script
+# 2. Установка Docker
 if ! command -v docker &> /dev/null; then
     echo ">>> Installing Docker..."
     curl -sSL https://get.docker.com | sh
     sudo usermod -aG docker $USER
     echo ">>> Docker installed. User added to 'docker' group."
+    # Применяем права группы сразу для текущей сессии
+    sudo chmod 666 /var/run/docker.sock
 else
     echo ">>> Docker is already installed."
 fi
 
-# 3. Install git (required to clone the project)
+# 3. Установка git
 if ! command -v git &> /dev/null; then
     echo ">>> Installing git..."
     sudo apt-get install -y git
 fi
 
-# 4. Clone the repository (Placeholder - replace with your actual repo URL)
-# If the folder already exists, we skip this step
+# 4. Клонирование репозитория
 PROJECT_DIR="redlab-daq-project"
+REPO_URL="https://github.com/nomad375/redlab-daq-project.git"
+
 if [ ! -d "$PROJECT_DIR" ]; then
-    echo ">>> Please enter your Git Repository URL:"
-    read REPO_URL
+    echo ">>> Cloning repository: $REPO_URL"
     git clone "$REPO_URL" "$PROJECT_DIR"
+else
+    echo ">>> Project directory already exists. Skipping clone."
 fi
 
 cd "$PROJECT_DIR"
 
-# 5. Handle environment variables (.env)
+# 5. Настройка переменных окружения (.env)
 if [ ! -f ".env" ]; then
     echo ">>> .env file not found. Creating from example..."
     if [ -f ".env.example" ]; then
@@ -45,17 +49,22 @@ if [ ! -f ".env" ]; then
         echo "!!! IMPORTANT: Please edit the .env file with your InfluxDB tokens now."
         echo ">>> Command: nano .env"
     else
-        echo "!!! WARNING: .env.example not found. You will need to create .env manually."
+        echo "!!! WARNING: .env.example not found. Creating empty .env..."
+        touch .env
     fi
 fi
 
-# 6. Ensure scripts are executable
+# 6. Права на исполнение скриптов
 chmod +x *.sh
 
-# 7. Final deployment
+# 7. Финальный запуск
 echo ">>> Initializing the stack..."
-# We use our previously created setup.sh to pull images and start
-./setup.sh
+# Используем sudo, если группа еще не подхватилась в текущей сессии
+if docker ps >/dev/null 2>&1; then
+    ./setup.sh
+else
+    sudo ./setup.sh
+fi
 
 echo "==========================================="
 echo "   Setup finished! Check logs: ./logs.sh   "
