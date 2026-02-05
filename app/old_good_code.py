@@ -2,7 +2,6 @@ from flask import Flask, render_template_string, request, jsonify # type: ignore
 import sys
 import glob
 import time
-import threading
 
 # Подключаем MSCL
 mscl_path = '/usr/lib/python3.12/dist-packages'
@@ -18,7 +17,6 @@ BASE_STATION = None
 BAUDRATE = 3000000 
 CURRENT_PORT = "Offline"
 BASE_RADIO_CH = "N/A"
-BASE_LOCK = threading.Lock()
 
 # Ваша полная карта частот
 RATE_MAP = {
@@ -234,41 +232,22 @@ def internal_connect():
             BASE_STATION.enableBeacon()
             return True, port
         return False, "Ping failed"
-    except Exception as e:
-        BASE_STATION = None
-        CURRENT_PORT = "Offline"
-        return False, str(e)
-
-def get_station_or_error():
-    ok, msg = internal_connect()
-    if not ok or BASE_STATION is None:
-        return None, msg
-    return BASE_STATION, None
-
-def reset_station():
-    global BASE_STATION, CURRENT_PORT, BASE_RADIO_CH
-    BASE_STATION = None
-    CURRENT_PORT = "Offline"
-    BASE_RADIO_CH = "N/A"
+    except Exception as e: return False, str(e)
 
 @app.route('/')
 def index(): return render_template_string(HTML_TEMPLATE)
 
 @app.route('/api/connect', methods=['POST'])
 def api_connect():
-    with BASE_LOCK:
-        s, p = internal_connect()
-        return jsonify(success=s, port=p, base_ch=BASE_RADIO_CH)
+    s, p = internal_connect()
+    return jsonify(success=s, port=p, base_ch=BASE_RADIO_CH)
 
 @app.route('/api/read/<int:node_id>')
 def api_read(node_id):
-    global RATE_MAP
-    with BASE_LOCK:
-        station, err = get_station_or_error()
-        if station is None:
-            return jsonify(success=False, error=f"Base station not connected: {err}")
+    global BASE_STATION, RATE_MAP
+    internal_connect()
     try:
-        node = mscl.WirelessNode(node_id, station)
+        node = mscl.WirelessNode(node_id, BASE_STATION)
         # ВОЗВРАТ К НАСТРОЙКАМ ИЗ old_good_code.py
         node.readWriteRetries(15)
         
@@ -326,19 +305,14 @@ def api_read(node_id):
             supported_rates=supported_rates, channels=channels
         )
     except Exception as e:
-        with BASE_LOCK:
-            reset_station()
         return jsonify(success=False, error=str(e))
 
 @app.route('/api/write', methods=['POST'])
 def api_write():
+    global BASE_STATION
     data = request.json
     try:
-        with BASE_LOCK:
-            station, err = get_station_or_error()
-            if station is None:
-                return jsonify(success=False, error=f"Base station not connected: {err}")
-            node = mscl.WirelessNode(int(data['node_id']), station)
+        node = mscl.WirelessNode(int(data['node_id']), BASE_STATION)
         node.setToIdle()
         time.sleep(1)
         config = mscl.WirelessNodeConfig()
@@ -352,10 +326,7 @@ def api_write():
         config.activeChannels(full_mask)
         node.applyConfig(config)
         return jsonify(success=True)
-    except Exception as e:
-        with BASE_LOCK:
-            reset_station()
-        return jsonify(success=False, error=str(e))
+    except Exception as e: return jsonify(success=False, error=str(e))
 
 def run_config_server():
     app.run(host='0.0.0.0', port=5000)
