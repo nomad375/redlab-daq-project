@@ -54,6 +54,17 @@ RATE_MAP = {
     118: "4 kHz", 119: "8 kHz", 120: "16 kHz", 121: "32 kHz",
     122: "64 kHz", 123: "128 kHz"
 }
+COMM_PROTOCOL_MAP = {
+    0: "LXRS",
+    1: "LXRS+",
+}
+TX_POWER_ENUM_TO_DBM = {
+    0: 20,
+    1: 16,
+    2: 10,
+    3: 5,
+    4: 0,
+}
 INPUT_RANGE_LABELS = {
     99: "+/-1.35 V or 0 to 1 mega-ohms (Gain: 1)",
     100: "+/-1.25 V or 0 to 10000 ohms (Gain: 2)",
@@ -288,14 +299,9 @@ def api_diagnostics(node_id):
             node = mscl.WirelessNode(node_id, BASE_STATION)
             features = node.features()
             flags = [
-                ("supportsSamplingMode", "supportsSamplingMode"),
-                ("supportsLostBeaconTimeout", "supportsLostBeaconTimeout"),
-                ("supportsInactivityTimeout", "supportsInactivityTimeout"),
-                ("supportsDiagnosticInfo", "supportsDiagnosticInfo"),
-                ("supportsTransmitPower", "supportsTransmitPower"),
-                ("supportsSampleRate", "supportsSampleRate"),
-                ("supportsChannel", "supportsChannel"),
-                ("supportsChannelSetting", "supportsChannelSetting"),
+                ("supportsInputRange", "supportsInputRange"),
+                ("supportsLowPassFilter", "supportsLowPassFilter"),
+                ("supportsCommunicationProtocol", "supportsCommunicationProtocol"),
             ]
             out = []
             for label, fn in flags:
@@ -383,13 +389,23 @@ def api_read(node_id):
                         log(f"[mscl-web] [{read_tag}] warn node_id={node_id}: firmware read failed: {e}")
         
                 current_power = cached.get("current_power", 16)
+                current_power_enum = cached.get("current_power_enum")
                 if refresh_eeprom or "current_power" not in cached:
                     try: 
                         p_raw = int(node.getTransmitPower())
-                        p_map = {0: 20, 1: 16, 2: 10, 3: 5, 4: 0}
-                        current_power = p_map.get(p_raw, 16)
+                        current_power_enum = p_raw
+                        current_power = TX_POWER_ENUM_TO_DBM.get(p_raw, 16)
                     except Exception as e:
                         log(f"[mscl-web] [{read_tag}] warn node_id={node_id}: transmit power read failed: {e}")
+                comm_protocol = cached.get("comm_protocol")
+                comm_protocol_text = cached.get("comm_protocol_text")
+                if refresh_eeprom or "comm_protocol" not in cached:
+                    try:
+                        cp = int(node.communicationProtocol())
+                        comm_protocol = cp
+                        comm_protocol_text = COMM_PROTOCOL_MAP.get(cp, f"Value {cp}")
+                    except Exception as e:
+                        log(f"[mscl-web] [{read_tag}] warn node_id={node_id}: communicationProtocol read failed: {e}")
             
                 # Optional status fields (best-effort)
                 try:
@@ -548,7 +564,8 @@ def api_read(node_id):
                     node_address=node_address, frequency=frequency,
                     storage_pct=storage_pct, sampling_mode=sampling_mode, sampling_mode_raw=sampling_mode_raw, data_mode=data_mode,
                     current_input_range=current_input_range, supported_input_ranges=supported_input_ranges,
-                    current_rate=current_rate, current_power=current_power,
+                    current_rate=current_rate, current_power=current_power, current_power_enum=current_power_enum,
+                    comm_protocol=comm_protocol, comm_protocol_text=comm_protocol_text,
                     supported_rates=supported_rates, channels=channels
                 )
                 set_idle_with_retry(node, node_id, "after-read", attempts=2, delay_sec=0.8, required=False)
@@ -729,7 +746,8 @@ def api_write():
                 config.samplingMode(mscl.WirelessTypes.samplingMode_sync)
                 config.sampleRate(int(sample_rate))
                 p_map = {20: 0, 16: 1, 10: 2, 5: 3, 0: 4}
-                config.transmitPower(p_map.get(int(tx_power), 0))
+                tx_enum = p_map.get(int(tx_power), 1)
+                config.transmitPower(tx_enum)
                 full_mask = mscl.ChannelMask()
                 for ch_id in channels:
                     full_mask.enable(ch_id)
@@ -758,6 +776,7 @@ def api_write():
                 cached = NODE_READ_CACHE.get(int(data['node_id']), {})
                 cached['current_rate'] = int(sample_rate)
                 cached['current_power'] = int(tx_power)
+                cached['current_power_enum'] = int(tx_enum)
                 if input_range is not None:
                     cached['current_input_range'] = int(input_range)
                 enabled_ids = {int(ch_id) for ch_id in channels}
