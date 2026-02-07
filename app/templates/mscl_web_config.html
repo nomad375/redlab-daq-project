@@ -9,7 +9,8 @@
         .card { margin-bottom: 20px; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border-radius: 10px; }
         .status-ok { color: #2ecc71; font-weight: bold; }
         .status-err { color: #e74c3c; font-weight: bold; }
-        .diag-text { font-size: 0.85rem; color: #6c757d; }
+        .status-warn { color: #d39e00; font-weight: bold; }
+        .diag-text { font-size: 0.74rem; color: #6c757d; line-height: 1.35; }
         .log-box { font-family: monospace; font-size: 0.8rem; background: #0b1020; color: #b9c2ff; padding: 10px; border-radius: 8px; max-height: 200px; overflow-y: auto; }
         .status-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; }
         .status-ok-pill { background: #dff6e8; color: #1f7a3f; }
@@ -134,6 +135,9 @@
 </div>
 
 <script>
+    const LAST_COMM_WARN_SEC = 30;
+    const LAST_COMM_CRITICAL_SEC = 120;
+
     async function connectBase() {
         try {
             let res = await fetch('/api/connect', {method:'POST'});
@@ -192,18 +196,51 @@
                         inputSel.add(opt);
                     });
                 }
+                const selectedInputRangeOpt = inputSel.options[inputSel.selectedIndex];
+                const inputRangeActual = selectedInputRangeOpt ? selectedInputRangeOpt.text : "N/A";
+                const activeChannelsText = Array.isArray(data.channels)
+                    ? data.channels.filter(ch => ch.enabled).map(ch => `ch${ch.id}`).join(", ")
+                    : "";
+                const stateNonIdle = (data.state !== null && data.state !== undefined) && String(data.state) !== "0";
+                const stateText = data.state_text
+                    ? `State: ${data.state_text}${(data.state !== null && data.state !== undefined) ? ` (${data.state})` : ''}`
+                    : null;
+                const lastCommAgeSec = parseLastCommAgeSec(data.last_comm);
+                const lastCommWarn = Number.isFinite(lastCommAgeSec) && lastCommAgeSec > LAST_COMM_WARN_SEC && lastCommAgeSec <= LAST_COMM_CRITICAL_SEC;
+                const lastCommDanger = Number.isFinite(lastCommAgeSec) && lastCommAgeSec > LAST_COMM_CRITICAL_SEC;
+                const lastCommText = data.last_comm
+                    ? (lastCommDanger
+                        ? `<span class='status-err'>Last Comm: ${data.last_comm} (${Math.round(lastCommAgeSec)}s ago)</span>`
+                        : (lastCommWarn
+                            ? `<span class='status-warn'>Last Comm: ${data.last_comm} (${Math.round(lastCommAgeSec)}s ago)</span>`
+                            : `Last Comm: ${data.last_comm}`))
+                    : null;
+                const storagePctNum = (data.storage_pct !== null && data.storage_pct !== undefined)
+                    ? Number(data.storage_pct)
+                    : null;
+                const storageDanger = Number.isFinite(storagePctNum) && storagePctNum > 90;
+                const storageWarn = Number.isFinite(storagePctNum) && storagePctNum >= 70 && storagePctNum <= 90;
                 const statusParts = [
                     `Model: ${data.model}`,
                     `FW: ${data.fw}`,
                     (data.node_address !== null && data.node_address !== undefined) ? `Node Address: ${data.node_address}` : null,
-                    `S/N: ${data.sn}`,
+                    lastCommText,
+                    stateText ? (stateNonIdle ? `<span class='status-warn'>${stateText}</span>` : stateText) : null,
+                    data.comm_protocol_text ? `Comm Protocol: ${data.comm_protocol_text}${(data.comm_protocol !== null && data.comm_protocol !== undefined) ? ` (${data.comm_protocol})` : ''}` : null,
                     data.region ? `Region: ${data.region}` : null,
                     data.frequency ? `Frequency: ${data.frequency}` : null,
-                    data.last_comm ? `Last Comm: ${data.last_comm}` : null,
-                    data.state_text ? `Last Known State: ${data.state_text}${(data.state !== null && data.state !== undefined) ? ` (${data.state})` : ''}` : null,
-                    (data.storage_pct !== null && data.storage_pct !== undefined) ? `Storage: ${data.storage_pct}%` : null,
+                    (data.current_power !== null && data.current_power !== undefined) ? `Radio Power: ${data.current_power} dBm` : null,
+                    inputRangeActual ? `Input Range: ${inputRangeActual}` : null,
+                    activeChannelsText ? `Active Channels: ${activeChannelsText}` : null,
                     data.sampling_mode ? `Sampling: ${data.sampling_mode}` : null,
-                    data.data_mode ? `Data Mode: ${data.data_mode}` : null
+                    (data.data_mode && String(data.data_mode) !== "1") ? `Data Mode: ${data.data_mode}` : null,
+                    (storagePctNum !== null)
+                        ? (storageDanger
+                            ? `<span class='status-err'>Storage: ${storagePctNum}%</span>`
+                            : (storageWarn
+                                ? `<span class='status-warn'>Storage: ${storagePctNum}%</span>`
+                                : `Storage: ${storagePctNum}%`))
+                        : null
                 ].filter(Boolean);
                 document.getElementById('diagArea').innerHTML = statusParts.join(" | ");
                 await loadDiagnostics(id);
@@ -259,6 +296,15 @@
         } finally {
             btnRead.disabled = false;
         }
+    }
+
+    function parseLastCommAgeSec(lastCommStr) {
+        if (!lastCommStr) return NaN;
+        // Expected format from backend: "YYYY-MM-DD HH:MM:SS"
+        const iso = String(lastCommStr).replace(" ", "T");
+        const dt = new Date(iso);
+        if (Number.isNaN(dt.getTime())) return NaN;
+        return (Date.now() - dt.getTime()) / 1000;
     }
 
     async function probeNode() {
@@ -499,7 +545,9 @@
                 target.innerText = "Diagnostics: " + data.error;
                 return;
             }
-            target.innerHTML = data.flags.map(f => `${f.name}: <span class='fw-bold'>${f.value ? 'YES' : 'NO'}</span>`).join(" | ");
+            const parts = data.flags.map(f => `${f.name}: <span class='fw-bold'>${f.value ? 'YES' : 'NO'}</span>`);
+            parts.push("<span class='fst-italic'>Feature flags may be conservative for this firmware/MSCL build.</span>");
+            target.innerHTML = parts.join(" | ");
         } catch (e) { }
     }
 
