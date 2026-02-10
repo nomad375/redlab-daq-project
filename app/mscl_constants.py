@@ -1,11 +1,9 @@
 import sys
-from typing import Callable
+import MSCL as mscl  # type: ignore
 
 mscl_path = '/usr/lib/python3.12/dist-packages'
 if mscl_path not in sys.path:
     sys.path.append(mscl_path)
-
-import MSCL as mscl  # type: ignore
 
 RATE_MAP = {
     106: "1 Hz", 107: "2 Hz", 108: "4 Hz", 109: "8 Hz",

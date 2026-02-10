@@ -81,7 +81,7 @@ def main():
                     write_api.write(BUCKET, ORG, points)
                     if log_data:
                         # Console feedback for active channels
-                        print(f"Logged: " + " | ".join(log_data))
+                        print("Logged: " + " | ".join(log_data))
                 except Exception as e:
                     print(f"!!! InfluxDB Write Error: {e}")
             
@@ -95,7 +95,7 @@ def main():
             try:
                 daq_device.disconnect()
                 daq_device.release()
-            except:
+            except Exception:
                 pass
 
 if __name__ == "__main__":

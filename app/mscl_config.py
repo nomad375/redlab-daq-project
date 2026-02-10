@@ -1,11 +1,12 @@
-from flask import Flask, render_template_string, request, jsonify # type: ignore
 import logging
 import os
-from pathlib import Path
 import time
 import threading
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
+
+from flask import Flask, render_template_string, request, jsonify  # type: ignore
 from influxdb_client import InfluxDBClient, Point  # type: ignore
 from influxdb_client.client.write_api import ASYNCHRONOUS, WriteOptions  # type: ignore
 
@@ -36,6 +37,7 @@ from mscl_constants import (
 )
 
 import mscl_state as state
+import MSCL as mscl  # type: ignore
 
 log = state.log
 internal_connect = state.internal_connect
@@ -51,8 +53,6 @@ _node_state_info = state._node_state_info
 close_base_station = state.close_base_station
 
 TEMPLATE_PATH = Path(__file__).parent / 'templates' / 'mscl_web_config.html'
-
-import MSCL as mscl  # type: ignore
 
 app = Flask(__name__)
 
@@ -74,12 +74,6 @@ MSCL_STREAM_QUEUE_MAX = int(os.getenv("MSCL_STREAM_QUEUE_MAX", "5000"))
 MSCL_STREAM_QUEUE_WAIT_MS = int(os.getenv("MSCL_STREAM_QUEUE_WAIT_MS", "200"))
 MSCL_STREAM_DROP_WARN_SEC = float(os.getenv("MSCL_STREAM_DROP_WARN_SEC", "30"))
 MSCL_STREAM_DROP_LOG_THROTTLE_SEC = float(os.getenv("MSCL_STREAM_DROP_LOG_THROTTLE_SEC", "30"))
-
-def log(msg):
-    print(msg, flush=True)
-    state.LOG_BUFFER.append(f"{time.strftime('%H:%M:%S')} {msg}")
-    if len(state.LOG_BUFFER) > state.LOG_MAX:
-        del state.LOG_BUFFER[0:len(state.LOG_BUFFER) - state.LOG_MAX]
 
 
 def _point_channel(dp):
@@ -1700,8 +1694,6 @@ def api_write():
                         return bool(v)
                     return False
 
-                has_sample_rate = 'sample_rate' in data
-                has_tx_power = 'tx_power' in data
                 has_channels = 'channels' in data
                 has_input_range = 'input_range' in data
                 has_unit = 'unit' in data

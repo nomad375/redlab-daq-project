@@ -101,20 +101,6 @@ def _set_temp_sensor_options(cfg, opts):
     return False, " | ".join(errs) if errs else "tempSensorOptions set failed"
 
 
-# leave signature
-    errs = []
-    for setter in (
-        lambda: cfg.tempSensorOptions(ch1_mask(), opts),
-        lambda: cfg.tempSensorOptions(opts),
-    ):
-        try:
-            setter()
-            return True, None
-        except Exception as exc:
-            errs.append(str(exc))
-    return False, " | ".join(errs) if errs else "tempSensorOptions set failed"
-
-
 def _filter_default_modes(opts):
     vals = {int(x.get("value")) for x in opts if x.get("value") is not None}
     if 4 in vals:
