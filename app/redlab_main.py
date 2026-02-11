@@ -32,6 +32,10 @@ def get_device():
         sys.exit(1)
 
 def main():
+    if not all([TOKEN, ORG, BUCKET]):
+        print("!!! Missing INFLUX_TOKEN / INFLUX_ORG / INFLUX_BUCKET")
+        sys.exit(1)
+
     # Initialize InfluxDB Client
     client = InfluxDBClient(url=URL, token=TOKEN, org=ORG)
     write_api = client.write_api(write_options=SYNCHRONOUS)

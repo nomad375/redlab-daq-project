@@ -45,6 +45,7 @@ class SharedOpLock:
 
 
 OP_LOCK = SharedOpLock(INTERPROCESS_LOCK_PATH)
+METRICS_LOCK = threading.Lock()
 
 # Global state
 BASE_STATION = None
@@ -65,6 +66,20 @@ NODE_ACTIVE_STATE_FRESH_SEC = 8
 SAMPLE_STOP_TOKENS = {}
 SAMPLE_RUNS = {}
 IDLE_IN_PROGRESS = set()
+METRICS = {
+    "base_reconnect_attempts": 0,
+    "base_reconnect_successes": 0,
+    "stream_reader_errors": 0,
+    "stream_writer_errors": 0,
+    "stream_packets_read": 0,
+    "stream_points_written": 0,
+    "stream_write_calls": 0,
+    "stream_queue_depth": 0,
+    "stream_queue_hwm": 0,
+    "stream_queue_dropped_packets": 0,
+    "eeprom_retries_read": 0,
+    "eeprom_retries_write": 0,
+}
 
 
 def log(msg):
@@ -72,6 +87,38 @@ def log(msg):
     LOG_BUFFER.append(f"{time.strftime('%H:%M:%S')} {msg}")
     if len(LOG_BUFFER) > LOG_MAX:
         del LOG_BUFFER[0 : len(LOG_BUFFER) - LOG_MAX]
+
+
+def metric_inc(name, amount=1):
+    with METRICS_LOCK:
+        METRICS[name] = int(METRICS.get(name, 0)) + int(amount)
+
+
+def metric_set(name, value):
+    with METRICS_LOCK:
+        METRICS[name] = value
+
+
+def metric_max(name, value):
+    with METRICS_LOCK:
+        current = int(METRICS.get(name, 0))
+        if int(value) > current:
+            METRICS[name] = int(value)
+
+
+def metric_snapshot():
+    with METRICS_LOCK:
+        return dict(METRICS)
+
+
+def mark_base_disconnected(reset_port=False):
+    global BASE_STATION, BASE_BEACON_STATE, LAST_PING_OK_TS, CURRENT_PORT
+    with CONNECT_LOCK:
+        BASE_STATION = None
+        BASE_BEACON_STATE = None
+        LAST_PING_OK_TS = 0
+        if reset_port:
+            CURRENT_PORT = None
 
 
 def _get_temp_sensor_options(node):
@@ -302,6 +349,7 @@ __all__ = [
     "INTERPROCESS_LOCK_PATH",
     "SharedOpLock",
     "OP_LOCK",
+    "METRICS_LOCK",
     "BASE_STATION",
     "BAUDRATE",
     "LOG_BUFFER",
@@ -320,7 +368,13 @@ __all__ = [
     "SAMPLE_STOP_TOKENS",
     "SAMPLE_RUNS",
     "IDLE_IN_PROGRESS",
+    "METRICS",
     "log",
+    "metric_inc",
+    "metric_set",
+    "metric_max",
+    "metric_snapshot",
+    "mark_base_disconnected",
     "_get_temp_sensor_options",
     "_set_temp_sensor_options",
     "_filter_default_modes",

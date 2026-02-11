@@ -4,9 +4,8 @@ import time
 import threading
 from collections import deque
 from datetime import datetime, timezone
-from pathlib import Path
 
-from flask import Flask, render_template_string, request, jsonify  # type: ignore
+from flask import Flask, render_template, request, jsonify  # type: ignore
 from influxdb_client import InfluxDBClient, Point  # type: ignore
 from influxdb_client.client.write_api import ASYNCHRONOUS, WriteOptions  # type: ignore
 
@@ -51,8 +50,11 @@ _filter_default_modes = state._filter_default_modes
 _feature_supported = state._feature_supported
 _node_state_info = state._node_state_info
 close_base_station = state.close_base_station
-
-TEMPLATE_PATH = Path(__file__).parent / 'templates' / 'mscl_web_config.html'
+mark_base_disconnected = state.mark_base_disconnected
+metric_inc = state.metric_inc
+metric_set = state.metric_set
+metric_max = state.metric_max
+metric_snapshot = state.metric_snapshot
 
 app = Flask(__name__)
 
@@ -74,6 +76,7 @@ MSCL_STREAM_QUEUE_MAX = int(os.getenv("MSCL_STREAM_QUEUE_MAX", "5000"))
 MSCL_STREAM_QUEUE_WAIT_MS = int(os.getenv("MSCL_STREAM_QUEUE_WAIT_MS", "200"))
 MSCL_STREAM_DROP_WARN_SEC = float(os.getenv("MSCL_STREAM_DROP_WARN_SEC", "30"))
 MSCL_STREAM_DROP_LOG_THROTTLE_SEC = float(os.getenv("MSCL_STREAM_DROP_LOG_THROTTLE_SEC", "30"))
+MSCL_STREAM_LOG_INTERVAL_SEC = float(os.getenv("MSCL_STREAM_LOG_INTERVAL_SEC", "5"))
 
 
 def _point_channel(dp):
@@ -136,10 +139,19 @@ def _stream_loop():
     packet_queue = deque()
     last_ch1_ts = 0.0
     last_drop_log_ts = 0.0
+    last_batch_log_ts = 0.0
     last_diag = {}
 
     def _note_diag(channel, value):
         last_diag[channel] = value
+
+    def _maybe_log_batch(now_ts, channel_counts, point_count):
+        nonlocal last_batch_log_ts
+        if (now_ts - last_batch_log_ts) < MSCL_STREAM_LOG_INTERVAL_SEC:
+            return
+        last_batch_log_ts = now_ts
+        channels_txt = ", ".join(f"{k}:{v}" for k, v in sorted(channel_counts.items()))
+        log(f"[mscl-stream] Logged {point_count} points ({channels_txt})")
 
     def _maybe_log_drop(now_ts):
         nonlocal last_drop_log_ts
@@ -166,13 +178,19 @@ def _stream_loop():
     def _reader_loop():
         backoff = 1.0
         backoff_max = 10.0
+        disconnected = True
         while True:
             try:
                 ok, _ = internal_connect()
                 if not ok or state.BASE_STATION is None:
+                    metric_inc("base_reconnect_attempts")
+                    disconnected = True
                     time.sleep(backoff)
                     backoff = min(backoff_max, backoff * 1.7)
                     continue
+                if disconnected:
+                    metric_inc("base_reconnect_successes")
+                    disconnected = False
 
                 with state.OP_LOCK:
                     base_station = state.BASE_STATION
@@ -188,15 +206,24 @@ def _stream_loop():
 
                 with queue_cond:
                     packet_queue.extend(packets)
+                    dropped = 0
                     while len(packet_queue) > MSCL_STREAM_QUEUE_MAX:
                         packet_queue.popleft()
+                        dropped += 1
+                    q_depth = len(packet_queue)
                     queue_cond.notify_all()
+                metric_inc("stream_packets_read", len(packets))
+                metric_set("stream_queue_depth", q_depth)
+                metric_max("stream_queue_hwm", q_depth)
+                if dropped:
+                    metric_inc("stream_queue_dropped_packets", dropped)
                 backoff = 1.0
 
             except Exception as e:
                 log(f"[mscl-stream] Reader error: {e}")
-                state.BASE_STATION = None
-                state.LAST_PING_OK_TS = 0
+                metric_inc("stream_reader_errors")
+                mark_base_disconnected()
+                disconnected = True
                 time.sleep(backoff)
                 backoff = min(backoff_max, backoff * 1.7)
 
@@ -242,12 +269,14 @@ def _stream_loop():
 
             if points:
                 write_api.write(INFLUX_BUCKET, INFLUX_ORG, points)
-                channels_txt = ", ".join(f"{k}:{v}" for k, v in sorted(channel_counts.items()))
-                log(f"[mscl-stream] Logged {len(points)} points ({channels_txt})")
+                metric_inc("stream_write_calls")
+                metric_inc("stream_points_written", len(points))
+                _maybe_log_batch(time.time(), channel_counts, len(points))
             _maybe_log_drop(time.time())
 
         except Exception as e:
             log(f"[mscl-stream] Writer error: {e}")
+            metric_inc("stream_writer_errors")
             time.sleep(MSCL_STREAM_IDLE_SLEEP)
 
 
@@ -553,7 +582,8 @@ def _start_sampling_run(node_id, body):
         return {"success": False, "error": str(e)}
 
 @app.route('/')
-def index(): return render_template_string(TEMPLATE_PATH.read_text())
+def index():
+    return render_template("mscl_web_config.html")
 
 @app.route('/api/connect', methods=['POST'])
 def api_connect():
@@ -684,9 +714,7 @@ def api_status():
 @app.route('/api/reconnect', methods=['POST'])
 def api_reconnect():
     with state.OP_LOCK:
-        state.BASE_STATION = None
-        state.BASE_BEACON_STATE = None
-        state.LAST_PING_OK_TS = 0
+        mark_base_disconnected()
         ok, msg = internal_connect(force_ping=True)
         return jsonify(success=bool(ok), message=msg)
 
@@ -769,6 +797,16 @@ def api_diagnostics(node_id):
 def api_logs():
     return jsonify(logs=state.LOG_BUFFER[-state.LOG_MAX:])
 
+@app.route('/api/metrics')
+def api_metrics():
+    metrics = metric_snapshot()
+    metrics["node_cache_size"] = len(state.NODE_READ_CACHE)
+    metrics["sampling_runs_count"] = len(state.SAMPLE_RUNS)
+    metrics["idle_in_progress_count"] = len(state.IDLE_IN_PROGRESS)
+    metrics["base_connected"] = bool(state.BASE_STATION is not None)
+    metrics["base_port"] = state.CURRENT_PORT
+    return jsonify(metrics=metrics)
+
 @app.route('/api/read/<int:node_id>')
 def api_read(node_id):
     read_tag = "READ"
@@ -805,9 +843,10 @@ def api_read(node_id):
                         except Exception as e2:
                             last_err = str(e2)
                             log(f"[mscl-web] [{read_tag}] error node_id={node_id}: getSampleRate failed (2nd): {last_err}")
+                            if "EEPROM" in last_err:
+                                metric_inc("eeprom_retries_read")
                             if "EEPROM" not in last_err:
-                                state.BASE_STATION = None
-                                state.LAST_PING_OK_TS = 0
+                                mark_base_disconnected()
                                 time.sleep(0.5)
                                 continue
                 try:
@@ -1405,11 +1444,11 @@ def api_read(node_id):
                 last_err = str(e)
                 log(f"[mscl-web] [{read_tag}] error node_id={node_id}: {e}")
                 if "EEPROM" in last_err:
+                    metric_inc("eeprom_retries_read")
                     backoff = min(4.0, 0.5 * (2 ** (attempt - 1)))
                     time.sleep(backoff)
                     continue
-                state.BASE_STATION = None
-                state.LAST_PING_OK_TS = 0
+                mark_base_disconnected()
                 time.sleep(0.5)
                 continue
     if last_err:
@@ -2100,9 +2139,10 @@ def api_write():
                 log(f"[mscl-web] Write error node_id={data.get('node_id')}: {e}")
                 # If the node returned an EEPROM read error, keep the base connection and retry.
                 last_was_eeprom = "EEPROM" in last_err
+                if last_was_eeprom:
+                    metric_inc("eeprom_retries_write")
                 if not last_was_eeprom:
-                    state.BASE_STATION = None
-                    state.LAST_PING_OK_TS = 0
+                    mark_base_disconnected()
                 time.sleep(0.5)
                 continue
     return jsonify(success=False, error=last_err or "Write failed")
