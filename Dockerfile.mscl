@@ -26,7 +26,7 @@ RUN ARCH="${TARGETARCH:-$(uname -m)}" && \
     rm mscl.deb
 
 # 3. Environment setup
-ENV PYTHONPATH="${PYTHONPATH}:/usr/lib/python3.12/dist-packages"
+ENV PYTHONPATH="/usr/lib/python3.12/dist-packages"
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
