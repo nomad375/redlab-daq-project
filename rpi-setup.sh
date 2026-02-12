@@ -5,8 +5,8 @@ echo "==========================================="
 echo " Raspberry Pi DAQ Stack Setup Utility"
 echo "==========================================="
 
-PROJECT_DIR="${PROJECT_DIR:-$HOME/redlab-daq-project}"
-REPO_URL="${REPO_URL:-https://github.com/nomad375/redlab-daq-project.git}"
+PROJECT_DIR="${PROJECT_DIR:-$HOME/bms-et-sensors}"
+REPO_URL="${REPO_URL:-https://github.com/nomad375/bms-et-sensors.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 
 install_prerequisites() {
