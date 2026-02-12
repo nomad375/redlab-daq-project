@@ -100,6 +100,7 @@ class SamplingRunServiceTests(unittest.TestCase):
             sampling_mode_labels={"transmit": "Transmit"},
             duration_to_seconds_fn=lambda _v, _u, _c: 0,
             set_sampling_mode_fn=lambda _cfg, _mode: (1, None),
+            set_sampling_data_type_fn=lambda _cfg, _data_type: ("float", None),
             start_sampling_via_sync_network_fn=lambda _node, _node_id: "sync-network",
             schedule_idle_after_fn=lambda *_args: None,
         )
@@ -120,12 +121,42 @@ class SamplingRunServiceTests(unittest.TestCase):
             sampling_mode_labels={"transmit": "Transmit"},
             duration_to_seconds_fn=lambda _v, _u, _c: 0,
             set_sampling_mode_fn=lambda _cfg, _mode: (1, None),
+            set_sampling_data_type_fn=lambda _cfg, _data_type: ("float", None),
             start_sampling_via_sync_network_fn=lambda _node, _node_id: "sync-network",
             schedule_idle_after_fn=lambda *_args: None,
         )
         self.assertTrue(out["success"])
         self.assertEqual(out["run"]["state"], "running")
         self.assertEqual(state.SAMPLE_RUNS[16904]["state"], "running")
+
+    def test_calibrated_data_type_is_applied(self):
+        state = _FakeState()
+        seen = {"data_type": None}
+
+        def _set_data_type(_cfg, data_type):
+            seen["data_type"] = data_type
+            return ("calibrated", None)
+
+        out = start_sampling_run(
+            node_id=16904,
+            body={"log_transmit_mode": "transmit", "continuous": True, "data_type": "calibrated"},
+            internal_connect=lambda: (True, "ok"),
+            state=state,
+            ensure_beacon_on=lambda: None,
+            mscl_mod=_FakeMscl,
+            log_func=lambda _m: None,
+            rate_map={112: "64 Hz"},
+            sampling_mode_labels={"transmit": "Transmit"},
+            duration_to_seconds_fn=lambda _v, _u, _c: 0,
+            set_sampling_mode_fn=lambda _cfg, _mode: (1, None),
+            set_sampling_data_type_fn=_set_data_type,
+            start_sampling_via_sync_network_fn=lambda _node, _node_id: "sync-network",
+            schedule_idle_after_fn=lambda *_args: None,
+        )
+        self.assertTrue(out["success"])
+        self.assertEqual(seen["data_type"], "calibrated")
+        self.assertEqual(out["run"]["data_type"], "calibrated")
+        self.assertEqual(out["run"]["data_type_value"], "calibrated")
 
 
 if __name__ == "__main__":

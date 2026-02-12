@@ -170,7 +170,7 @@
               }
             ]
           },
-          "unit": "newton"
+          "unit": "celsius"
         },
         "overrides": []
       },
@@ -200,11 +200,11 @@
             "type": "influxdb",
             "uid": "InfluxDB_Flux"
           },
-          "query": "from(bucket: \"daq_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mscl_sensors\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"source\"] == \"mscl_config_stream\")\n  |> filter(fn: (r) => r[\"channel\"] == \"ch1\")\n  |> map(fn: (r) => ({ r with _value: 1000000.0 / (0.32333116 * r._value) }))\n  |> yield(name: \"radio\")",
+          "query": "from(bucket: \"daq_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mscl_sensors\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"source\"] == \"mscl_config_stream\")\n  |> filter(fn: (r) => r[\"channel\"] == \"ch1\")\n  |> yield(name: \"radio\")",
           "refId": "A"
         }
       ],
-      "title": "MicroStrain Sensor Data (Radio Stream)",
+      "title": "MicroStrain Temperature (Radio Stream)",
       "type": "timeseries"
     },
     {
@@ -257,7 +257,7 @@
               }
             ]
           },
-          "unit": "newton"
+          "unit": "celsius"
         },
         "overrides": []
       },
@@ -287,11 +287,11 @@
             "type": "influxdb",
             "uid": "InfluxDB_Flux"
           },
-          "query": "from(bucket: \"daq_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mscl_sensors\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"source\"] == \"mscl_node_export\")\n  |> filter(fn: (r) => r[\"channel\"] == \"ch1\")\n  |> map(fn: (r) => ({ r with _value: 1000000.0 / (0.32333116 * r._value) }))\n  |> yield(name: \"node_export\")",
+          "query": "from(bucket: \"daq_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mscl_sensors\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"source\"] == \"mscl_node_export\")\n  |> filter(fn: (r) => r[\"channel\"] == \"ch1\")\n  |> yield(name: \"node_export\")",
           "refId": "A"
         }
       ],
-      "title": "MicroStrain Sensor Data (Node Export Stream)",
+      "title": "MicroStrain Temperature (Node Export Stream)",
       "type": "timeseries"
     }
   ],

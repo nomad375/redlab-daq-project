@@ -360,6 +360,31 @@ def _set_sampling_mode_on_node(cfg, mode_key):
     return None, " | ".join(errs) if errs else "no setter available"
 
 
+def _set_sampling_data_type_on_node(cfg, data_type):
+    data_type = str(data_type or "float").strip().lower()
+    errs = []
+    if data_type == "calibrated":
+        try:
+            cfg.dataFormat(int(getattr(mscl.WirelessTypes, "dataFormat_cal_float")))
+            return "calibrated", None
+        except Exception as e:
+            errs.append(str(e))
+            return None, " | ".join(errs) if errs else "calibrated format setter is unavailable"
+    return "float", None
+
+
+def _classify_data_type_from_format(format_value):
+    try:
+        fv = int(format_value)
+    except Exception:
+        return "float"
+    cal_candidates = {
+        int(getattr(mscl.WirelessTypes, "dataFormat_cal_float", -1)),
+        int(getattr(mscl.WirelessTypes, "dataFormat_cal_int16_x10", -1)),
+    }
+    return "calibrated" if fv in cal_candidates else "float"
+
+
 def _is_tc_link_200_model(model):
     return _is_tc_link_200_model_impl(model)
 
@@ -448,6 +473,7 @@ def _start_sampling_run(node_id, body):
         sampling_mode_labels=SAMPLING_MODE_LABELS,
         duration_to_seconds_fn=_sampling_duration_to_seconds,
         set_sampling_mode_fn=_set_sampling_mode_on_node,
+        set_sampling_data_type_fn=_set_sampling_data_type_on_node,
         start_sampling_via_sync_network_fn=_start_sampling_via_sync_network,
         schedule_idle_after_fn=_schedule_idle_after,
     )
@@ -755,6 +781,13 @@ def api_read(node_id):
                     if current_data_mode is not None
                     else None
                 )
+                current_data_format = cached.get("current_data_format")
+                if refresh_eeprom or "current_data_format" not in cached:
+                    try:
+                        current_data_format = int(node.getDataFormat())
+                    except Exception:
+                        pass
+                current_data_type = _classify_data_type_from_format(current_data_format)
                 current_input_range = cached.get("current_input_range")
                 supported_input_ranges = cached.get("supported_input_ranges", [])
                 if refresh_eeprom or "current_input_range" not in cached:
@@ -1181,6 +1214,7 @@ def api_read(node_id):
                     node_address=node_address, frequency=frequency,
                     storage_pct=storage_pct, storage_capacity_raw=storage_capacity_raw, sampling_mode=sampling_mode, sampling_mode_raw=sampling_mode_raw,
                     current_data_mode=current_data_mode, data_mode_text=data_mode_text, data_mode_options=data_mode_options,
+                    current_data_format=current_data_format, current_data_type=current_data_type,
                     current_input_range=current_input_range, supported_input_ranges=supported_input_ranges,
                     current_unit=current_unit, unit_options=unit_options,
                     current_cjc_unit=current_cjc_unit, cjc_unit_options=cjc_unit_options,

@@ -15,6 +15,7 @@ def start_sampling_run(
     sampling_mode_labels,
     duration_to_seconds_fn,
     set_sampling_mode_fn,
+    set_sampling_data_type_fn,
     start_sampling_via_sync_network_fn,
     schedule_idle_after_fn,
 ):
@@ -23,8 +24,8 @@ def start_sampling_run(
         return {"success": False, "error": f"Base station not connected: {msg}"}
 
     mode_key = str(body.get("log_transmit_mode") or "transmit").lower()
-    # Current product scope: keep only float/raw sampling payload type.
-    data_type = "float"
+    data_type_raw = str(body.get("data_type") or "float").strip().lower()
+    data_type = "calibrated" if data_type_raw == "calibrated" else "float"
     continuous = bool(body.get("continuous", False))
     duration_value = body.get("duration_value", 60)
     duration_units = body.get("duration_units", "seconds")
@@ -103,6 +104,16 @@ def start_sampling_run(
                 "error": f"Log/Transmit mode not set: {mode_err}",
                 "rate": sample_rate,
                 "mode": mode_key,
+            }
+
+        data_type_value, data_type_err = set_sampling_data_type_fn(cfg, data_type)
+        if data_type_value is None:
+            return {
+                "success": False,
+                "error": f"Data type not set: {data_type_err}",
+                "rate": sample_rate,
+                "mode": mode_key,
+                "data_type": data_type,
             }
 
         apply_ok = False
@@ -203,6 +214,7 @@ def start_sampling_run(
             "mode_label": sampling_mode_labels.get(mode_key, mode_key),
             "mode_value": mode_value,
             "data_type": data_type,
+            "data_type_value": data_type_value,
             "sample_rate": sample_rate,
             "sample_rate_set": sample_rate_set,
             "apply_config_ok": apply_ok,
@@ -220,7 +232,7 @@ def start_sampling_run(
             rate_log = "keep"
         log_func(
             f"[mscl-web] [S-RUN] start ok node_id={node_id} mode={run['mode_label']} "
-            f"dur={duration_sec}s rate={rate_log}"
+            f"dur={duration_sec}s rate={rate_log} data_type={data_type}"
         )
         return {"success": True, "run": run}
     except Exception as e:

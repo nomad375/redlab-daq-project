@@ -134,6 +134,7 @@
                     <label class="form-label fw-bold">Data Type</label>
                     <select id="samplingRunDataType" class="form-select">
                         <option value="float" selected>float (raw data)</option>
+                        <option value="calibrated">Calibrated</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -783,6 +784,11 @@
                     sel.add(opt);
                 });
                 syncSamplingRunRateOptions();
+                const runDataTypeSel = document.getElementById('samplingRunDataType');
+                const currentRunDataType = String(data.current_data_type || 'float').toLowerCase();
+                if (runDataTypeSel) {
+                    runDataTypeSel.value = (currentRunDataType === 'calibrated') ? 'calibrated' : 'float';
+                }
 
                 const chArea = document.getElementById('channelsArea');
                 chArea.innerHTML = "";
