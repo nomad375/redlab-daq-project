@@ -5,9 +5,17 @@ echo "==========================================="
 echo " Raspberry Pi DAQ Stack Setup Utility"
 echo "==========================================="
 
-PROJECT_DIR="${PROJECT_DIR:-$HOME/bms-et-sensors}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${PROJECT_DIR:-}" ]]; then
+  if [[ -f "${SCRIPT_DIR}/docker-compose.yml" ]]; then
+    PROJECT_DIR="${SCRIPT_DIR}"
+  else
+    PROJECT_DIR="$HOME/bms-et-sensors"
+  fi
+fi
 REPO_URL="${REPO_URL:-https://github.com/nomad375/redlab-daq-project.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
+APPLY_AP="${APPLY_AP:-1}"
 DOCKER_CMD=(docker)
 COMPOSE_CMD=(docker compose)
 
@@ -15,6 +23,12 @@ install_prerequisites() {
   echo ">>> Installing base packages..."
   sudo apt-get update
   sudo apt-get install -y ca-certificates curl git
+}
+
+install_network_manager() {
+  echo ">>> Ensuring NetworkManager is installed and running..."
+  sudo apt-get install -y network-manager
+  sudo systemctl enable --now NetworkManager
 }
 
 install_docker_if_needed() {
@@ -50,6 +64,19 @@ ensure_compose_plugin() {
 }
 
 prepare_repo() {
+  if [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+    cd "$PROJECT_DIR"
+    if [ -d "$PROJECT_DIR/.git" ]; then
+      echo ">>> Updating repository ($REPO_BRANCH)..."
+      git fetch --all --tags --prune
+      git checkout "$REPO_BRANCH"
+      git pull --ff-only origin "$REPO_BRANCH"
+    else
+      echo ">>> Using existing project directory (no .git)."
+    fi
+    return
+  fi
+
   if [ ! -d "$PROJECT_DIR/.git" ]; then
     echo ">>> Cloning repository into $PROJECT_DIR"
     git clone "$REPO_URL" "$PROJECT_DIR"
@@ -79,6 +106,25 @@ prepare_env_file() {
   fi
 }
 
+apply_ap_settings() {
+  if [[ "${APPLY_AP}" != "1" ]]; then
+    echo ">>> Skipping AP setup (APPLY_AP=${APPLY_AP})"
+    return
+  fi
+
+  if [ ! -x "./rpi-nm-ap.sh" ]; then
+    if [ -f "./rpi-nm-ap.sh" ]; then
+      chmod +x ./rpi-nm-ap.sh
+    else
+      echo "!!! rpi-nm-ap.sh not found. Skipping AP setup."
+      return
+    fi
+  fi
+
+  echo ">>> Applying Raspberry Pi AP settings (NetworkManager)..."
+  ./rpi-nm-ap.sh
+}
+
 build_and_start_stack() {
   echo ">>> Building local ARM-compatible app images..."
   "${COMPOSE_CMD[@]}" -f docker-compose.yml -f docker-compose.override.yml build --no-cache redlab-app mscl-app
@@ -97,11 +143,13 @@ show_post_checks() {
 }
 
 install_prerequisites
+install_network_manager
 install_docker_if_needed
 resolve_docker_access
 ensure_compose_plugin
 prepare_repo
 prepare_env_file
+apply_ap_settings
 build_and_start_stack
 show_post_checks
 
