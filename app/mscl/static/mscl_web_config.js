@@ -730,6 +730,7 @@
                 statusDiv.className = "small status-ok mt-2";
                 statusDiv.innerText = data.message || "Stop command sent";
                 if ((data.idle_status || {}).state_confirmed === true) markIdleState(true);
+                setSamplingActive(false);
             } else {
                 statusDiv.className = "small status-err mt-2";
                 statusDiv.innerText = `Stop failed: ${data.error || 'unknown error'}`;
@@ -760,10 +761,9 @@
             const linkState = data.link_state ? ` | link ${data.link_state}` : "";
             statusDiv.className = "small text-muted mt-2";
             statusDiv.innerText = `State ${runState} | mode ${mode}${left}${nodeState}${linkState}`;
-            const panel = document.getElementById('samplingPanel');
-            const panelOpen = panel && panel.style.display !== 'none';
-            const isRunning = String(runState).toLowerCase() !== "idle";
-            setSamplingActive(panelOpen || isRunning);
+            const runStateNorm = String(runState || "").toLowerCase();
+            const isRunning = !["idle", "stopped", "complete", "completed", "done"].includes(runStateNorm);
+            setSamplingActive(isRunning);
         } catch (e) {
             // silent
         }
